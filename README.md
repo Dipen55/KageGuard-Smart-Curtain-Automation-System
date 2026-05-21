@@ -244,10 +244,12 @@ KageGuard/
 
 ---
 
-# 👨‍💻 Authors
+# 🤝 Contributors
 
-### Dipendra Teli  
-### Neha Yadav  
+| Name | Role | GitHub |
+|---|---|---|
+| [Dipendra Teli](https://github.com/Dipen55) | Project Development & Embedded Systems | [Profile](https://github.com/Dipen55) |
+| [Neha Yadav](https://github.com/neha-9018) | Research, Testing & Documentation | [Profile](https://github.com/neha-9018) |
 
 ---
 
