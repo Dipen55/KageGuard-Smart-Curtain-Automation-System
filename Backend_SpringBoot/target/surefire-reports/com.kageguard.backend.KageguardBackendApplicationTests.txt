@@ -1,4 +1,0 @@
--------------------------------------------------------------------------------
-Test set: com.kageguard.backend.KageguardBackendApplicationTests
--------------------------------------------------------------------------------
-Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.888 s -- in com.kageguard.backend.KageguardBackendApplicationTests

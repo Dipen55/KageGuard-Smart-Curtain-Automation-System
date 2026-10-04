@@ -213,24 +213,48 @@
     }).join("");
   }
 
-  async function refresh() {
+    let history = [];   // newest first, at most 30 readings
+  let socket = null;
+
+  async function loadHistory() {
     try {
-      const [latestRes, listRes] = await Promise.all([
-        fetch("/api/readings/latest"),
-        fetch("/api/readings?limit=30")
-      ]);
-      setConnection(true);
-      if (latestRes.status === 204) return;   // server is up but has no data yet
-      const latest = await latestRes.json();
-      const list = await listRes.json();
-      render(latest, list);
+      const res = await fetch("/api/readings?limit=30");
+      history = await res.json();
+      if (history.length > 0) render(history[0], history);
     } catch (e) {
-      setConnection(false);
+      // ignore: live data will arrive through the socket
     }
   }
 
-  refresh();
-  setInterval(refresh, 1000);
+  function connect() {
+    const scheme = location.protocol === "https:" ? "wss://" : "ws://";
+    socket = new WebSocket(scheme + location.host + "/ws/readings");
+
+    socket.onopen = () => {
+      setConnection(true);
+      loadHistory();
+    };
+
+    socket.onmessage = (event) => {
+      const reading = JSON.parse(event.data);
+      if (history.length > 0 && history[0].id === reading.id) {
+        history[0] = reading;          // same reading sent twice, replace it
+      } else {
+        history.unshift(reading);
+        if (history.length > 30) history.pop();
+      }
+      render(reading, history);
+    };
+
+    socket.onclose = () => {
+      setConnection(false);
+      setTimeout(connect, 2000);       // try again in 2 seconds
+    };
+
+    socket.onerror = () => socket.close();
+  }
+
+  connect();
 </script>
 </body>
 </html>
