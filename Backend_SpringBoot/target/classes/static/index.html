@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>KageGuard Dashboard</title>
+<style>
+  :root {
+    --bg: #f4f6f8; --card: #ffffff; --text: #1c2733; --muted: #6b7a89;
+    --border: #dde3e9; --ok: #1b9e5a; --info: #2a6fdb; --danger: #d62828;
+    --warn: #d98200; --curtain: #8a5a44; --sky: #bfe3f7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12171c; --card: #1b232b; --text: #e6edf3; --muted: #8b99a8;
+      --border: #2b3641; --curtain: #a8715a; --sky: #2c5a78;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 20px; background: var(--bg); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+  h1 { font-size: 22px; margin: 0; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .pill { padding: 4px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; color: #fff; background: var(--muted); }
+  .pill.on { background: var(--ok); }
+  .pill.off { background: var(--danger); }
+
+  .grid { display: grid; gap: 14px; grid-template-columns: 1fr 1fr; }
+  @media (max-width: 720px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px; }
+  .card h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 0 0 12px; }
+  .full { grid-column: 1 / -1; }
+
+  /* Curtain window */
+  .window {
+    position: relative; height: 200px; border: 8px solid #5b4636; border-radius: 6px;
+    background: var(--sky); overflow: hidden; transition: box-shadow .4s;
+  }
+  .window.fire { box-shadow: 0 0 0 4px var(--danger), 0 0 24px 6px rgba(214, 40, 40, .5); }
+  .window.rain { box-shadow: 0 0 0 4px var(--info); }
+  .panel {
+    position: absolute; top: 0; bottom: 0; width: 0%; background: var(--curtain);
+    transition: width .8s ease;
+    background-image: repeating-linear-gradient(90deg, rgba(0,0,0,.12) 0 6px, transparent 6px 16px);
+  }
+  .panel.left { left: 0; }
+  .panel.right { right: 0; }
+  .rod { height: 6px; background: #3a2c22; margin-top: 6px; border-radius: 3px; }
+  .caption { text-align: center; margin-top: 10px; font-size: 14px; }
+  .caption b { font-size: 20px; }
+
+  .badge { display: inline-block; padding: 8px 14px; border-radius: 8px; font-weight: 600; font-size: 14px; color: #fff; }
+  .badge.ok { background: var(--ok); }
+  .badge.info { background: var(--info); }
+  .badge.danger { background: var(--danger); }
+  .mode-note { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.5; }
+
+  .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
+  .stat { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+  .stat .label { color: var(--muted); font-size: 12px; }
+  .stat .value { font-size: 24px; font-weight: 700; }
+  .stat .unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+  svg.spark { width: 100%; height: 60px; display: block; }
+  .legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--border); }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; }
+  tr.fire td { color: var(--danger); font-weight: 600; }
+  .scroll { overflow-x: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div>
+      <h1>KageGuard Dashboard</h1>
+      <div class="sub">Smart curtain digital twin (simulated data)</div>
+    </div>
+    <span id="conn" class="pill">Connecting...</span>
+  </header>
+
+  <div class="grid">
+
+    <div class="card">
+      <h2>Curtain</h2>
+      <div id="window" class="window">
+        <div id="left" class="panel left"></div>
+        <div id="right" class="panel right"></div>
+      </div>
+      <div class="rod"></div>
+      <div class="caption"><b id="state">-</b><br><span id="closedPct" class="sub">-</span></div>
+    </div>
+
+    <div class="card">
+      <h2>System mode</h2>
+      <span id="badge" class="badge ok">Waiting for data</span>
+      <div id="modeNote" class="mode-note">Priority order: fire, then rain, then light.</div>
+      <div class="stats">
+        <div class="stat"><div class="label">Light (S)</div><div class="value"><span id="light">-</span> <span class="unit">/ 1023</span></div></div>
+        <div class="stat"><div class="label">Temperature (T)</div><div class="value"><span id="temp">-</span> <span class="unit">°C</span></div></div>
+        <div class="stat"><div class="label">Flame (F)</div><div class="value"><span id="flame">-</span> <span class="unit">/ 1023</span></div></div>
+        <div class="stat"><div class="label">Rain (R)</div><div class="value" id="rain">-</div></div>
+      </div>
+    </div>
+
+    <div class="card">
+      <h2>Light, last 30 readings</h2>
+      <div class="legend">Scale 0 to 1023</div>
+      <svg id="sparkLight" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card">
+      <h2>Temperature, last 30 readings</h2>
+      <div class="legend">Scale 15 to 70 °C</div>
+      <svg id="sparkTemp" class="spark" viewBox="0 0 300 60" preserveAspectRatio="none"></svg>
+    </div>
+
+    <div class="card full">
+      <h2>Recent readings</h2>
+      <div class="scroll">
+        <table>
+          <thead>
+            <tr><th>Time</th><th>S</th><th>L</th><th>P</th><th>R</th><th>T</th><th>F</th><th>Fire</th></tr>
+          </thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+  const STATE_NAMES = ["Fully open", "Mostly open", "Partially open", "Half open",
+                       "Partially closed", "Mostly closed", "Fully closed"];
+
+  const $ = (id) => document.getElementById(id);
+
+  function setConnection(ok) {
+    const el = $("conn");
+    el.textContent = ok ? "Live" : "Offline";
+    el.className = "pill " + (ok ? "on" : "off");
+  }
+
+  function spark(svgId, values, min, max, color) {
+    const svg = $(svgId);
+    if (values.length < 2) { svg.innerHTML = ""; return; }
+    const w = 300, h = 60;
+    const points = values.map((v, i) => {
+      const x = (i / (values.length - 1)) * w;
+      const y = h - ((v - min) / (max - min)) * h;
+      return x.toFixed(1) + "," + Math.max(2, Math.min(h - 2, y)).toFixed(1);
+    }).join(" ");
+    svg.innerHTML = '<polyline fill="none" stroke="' + color + '" stroke-width="2" ' +
+                    'vector-effect="non-scaling-stroke" points="' + points + '"/>';
+  }
+
+  function render(r, list) {
+    // Curtain: position 0 = open, 6 = closed. Each panel covers up to 50 percent.
+    const width = (r.curtainPosition / 6) * 50;
+    $("left").style.width = width + "%";
+    $("right").style.width = width + "%";
+    $("state").textContent = STATE_NAMES[r.curtainPosition];
+    $("closedPct").textContent = Math.round((r.curtainPosition / 6) * 100) +
+                                 "% closed, target level " + r.targetLevel;
+
+    // Mode badge: same priority as the Arduino code
+    const badge = $("badge");
+    const win = $("window");
+    win.classList.remove("fire", "rain");
+    if (r.fireDetected) {
+      badge.textContent = "FIRE OVERRIDE";
+      badge.className = "badge danger";
+      $("modeNote").textContent = "Flame and heat detected. The curtain is forced open.";
+      win.classList.add("fire");
+    } else if (r.rainActive) {
+      badge.textContent = "RAIN OVERRIDE";
+      badge.className = "badge info";
+      $("modeNote").textContent = "Rain detected. The curtain is forced closed.";
+      win.classList.add("rain");
+    } else {
+      badge.textContent = "AUTO: light";
+      badge.className = "badge ok";
+      $("modeNote").textContent = "No alerts. The curtain follows the light level.";
+    }
+
+    $("light").textContent = r.lightValue;
+    $("temp").textContent = r.tempC;
+    $("flame").textContent = r.flameValue;
+    $("rain").textContent = r.rainActive ? "Raining" : "Dry";
+
+    // Charts need oldest first, the API returns newest first
+    const ordered = list.slice().reverse();
+    spark("sparkLight", ordered.map(x => x.lightValue), 0, 1023, "#e0a100");
+    spark("sparkTemp", ordered.map(x => x.tempC), 15, 70, "#d62828");
+
+    // Table of the 10 newest
+    $("rows").innerHTML = list.slice(0, 10).map(x => {
+      const t = new Date(x.recordedAt).toLocaleTimeString();
+      return '<tr class="' + (x.fireDetected ? "fire" : "") + '">' +
+        "<td>" + t + "</td><td>" + x.lightValue + "</td><td>" + x.targetLevel + "</td>" +
+        "<td>" + x.curtainPosition + "</td><td>" + (x.rainActive ? 1 : 0) + "</td>" +
+        "<td>" + x.tempC + "</td><td>" + x.flameValue + "</td>" +
+        "<td>" + (x.fireDetected ? "YES" : "no") + "</td></tr>";
+    }).join("");
+  }
+
+  async function refresh() {
+    try {
+      const [latestRes, listRes] = await Promise.all([
+        fetch("/api/readings/latest"),
+        fetch("/api/readings?limit=30")
+      ]);
+      setConnection(true);
+      if (latestRes.status === 204) return;   // server is up but has no data yet
+      const latest = await latestRes.json();
+      const list = await listRes.json();
+      render(latest, list);
+    } catch (e) {
+      setConnection(false);
+    }
+  }
+
+  refresh();
+  setInterval(refresh, 1000);
+</script>
+</body>
+</html>
