@@ -1,7 +1,11 @@
 package com.kageguard.backend.simulator;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Component;
+
 import java.util.Random;
 
+@Component
 public class CurtainSimulator {
 
     private final Random random;
@@ -14,16 +18,21 @@ public class CurtainSimulator {
     private boolean rain = false;
     private int fireTicksLeft = 0;
 
+    // null means automatic mode. A number from 0 to 6 means "hold the curtain here".
+    private Integer manualLevel = null;
+
+    @Autowired
     public CurtainSimulator() {
         this.random = new Random();
     }
 
+    // Used by tests, so the random numbers are repeatable
     public CurtainSimulator(long seed) {
         this.random = new Random(seed);
     }
 
     // Returns one packet like "S:340,L:4,P:3,R:0,T:27,F:320"
-    public String nextPacket() {
+    public synchronized String nextPacket() {
         tick++;
 
         // Light follows a slow day/night wave with a little noise
@@ -50,7 +59,8 @@ public class CurtainSimulator {
             flame = 200 + random.nextInt(200);
         }
 
-        // Same logic as the Arduino code
+        // Same logic as the Arduino code. This keeps running in manual mode too,
+        // so automatic mode resumes smoothly.
         int level = calculateLevel(light);
         if (level == lastLevel) {
             stabilityCounter++;
@@ -62,10 +72,13 @@ public class CurtainSimulator {
         }
         lastLevel = level;
 
+        // Priority: fire, then manual command, then rain, then light
         boolean fire = temp > 45 && flame > 650;
         int target;
         if (fire) {
             target = 0;
+        } else if (manualLevel != null) {
+            target = manualLevel;
         } else if (rain) {
             target = 6;
         } else {
@@ -81,6 +94,23 @@ public class CurtainSimulator {
 
         return String.format("S:%d,L:%d,P:%d,R:%d,T:%d,F:%d",
                 light, target, position, rain ? 1 : 0, temp, flame);
+    }
+
+    // Hold the curtain at a level from 0 (fully open) to 6 (fully closed)
+    public synchronized void setManualLevel(int level) {
+        if (level < 0 || level > 6) {
+            throw new IllegalArgumentException("Level must be between 0 and 6");
+        }
+        this.manualLevel = level;
+    }
+
+    // Go back to automatic control
+    public synchronized void setAuto() {
+        this.manualLevel = null;
+    }
+
+    public synchronized ControlState state() {
+        return new ControlState(manualLevel == null ? "AUTO" : "MANUAL", manualLevel);
     }
 
     static int calculateLevel(int value) {

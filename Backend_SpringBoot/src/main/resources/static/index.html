@@ -42,6 +42,7 @@
   }
   .window.fire { box-shadow: 0 0 0 4px var(--danger), 0 0 24px 6px rgba(214, 40, 40, .5); }
   .window.rain { box-shadow: 0 0 0 4px var(--info); }
+  .window.manual { box-shadow: 0 0 0 4px var(--warn); }
   .panel {
     position: absolute; top: 0; bottom: 0; width: 0%; background: var(--curtain);
     transition: width .8s ease;
@@ -57,6 +58,7 @@
   .badge.ok { background: var(--ok); }
   .badge.info { background: var(--info); }
   .badge.danger { background: var(--danger); }
+  .badge.warn { background: var(--warn); }
   .mode-note { color: var(--muted); font-size: 13px; margin-top: 10px; line-height: 1.5; }
 
   .stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 14px; }
@@ -64,6 +66,22 @@
   .stat .label { color: var(--muted); font-size: 12px; }
   .stat .value { font-size: 24px; font-weight: 700; }
   .stat .unit { font-size: 13px; color: var(--muted); font-weight: 400; }
+
+  /* Remote control */
+  .controls { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .btn {
+    padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 14px; cursor: pointer;
+  }
+  .btn:hover { border-color: var(--info); }
+  .btn.primary { background: var(--info); border-color: var(--info); color: #fff; }
+  select.level {
+    padding: 8px; border-radius: 8px; border: 1px solid var(--border);
+    background: var(--card); color: var(--text); font-size: 14px;
+  }
+  .control-state { font-size: 14px; margin-bottom: 12px; }
+  .control-note { color: var(--muted); font-size: 13px; margin-top: 12px; line-height: 1.5; }
+  .msg { color: var(--danger); font-size: 13px; margin-top: 8px; min-height: 16px; }
 
   svg.spark { width: 100%; height: 60px; display: block; }
   .legend { font-size: 12px; color: var(--muted); margin-bottom: 4px; }
@@ -102,12 +120,29 @@
     <div class="card">
       <h2>System mode</h2>
       <span id="badge" class="badge ok">Waiting for data</span>
-      <div id="modeNote" class="mode-note">Priority order: fire, then rain, then light.</div>
+      <div id="modeNote" class="mode-note">Priority order: fire, then your manual command, then rain, then light.</div>
       <div class="stats">
         <div class="stat"><div class="label">Light (S)</div><div class="value"><span id="light">-</span> <span class="unit">/ 1023</span></div></div>
         <div class="stat"><div class="label">Temperature (T)</div><div class="value"><span id="temp">-</span> <span class="unit">°C</span></div></div>
         <div class="stat"><div class="label">Flame (F)</div><div class="value"><span id="flame">-</span> <span class="unit">/ 1023</span></div></div>
         <div class="stat"><div class="label">Rain (R)</div><div class="value" id="rain">-</div></div>
+      </div>
+    </div>
+
+    <div class="card full">
+      <h2>Remote control (virtual)</h2>
+      <div class="control-state">Current control: <b id="controlMode">Automatic</b></div>
+      <div class="controls">
+        <button class="btn" onclick="sendControl('/api/control/manual?level=0')">Open</button>
+        <button class="btn" onclick="sendControl('/api/control/manual?level=6')">Close</button>
+        <select id="levelSelect" class="level"></select>
+        <button class="btn" onclick="sendControl('/api/control/manual?level=' + $('levelSelect').value)">Set level</button>
+        <button class="btn primary" onclick="sendControl('/api/control/auto')">Back to auto</button>
+      </div>
+      <div id="controlMsg" class="msg"></div>
+      <div class="control-note">
+        This controls the simulated curtain only. The real Arduino firmware does not accept commands.
+        Fire always overrides manual control. A manual command overrides rain and light.
       </div>
     </div>
 
@@ -144,6 +179,10 @@
 
   const $ = (id) => document.getElementById(id);
 
+  let control = { mode: "AUTO", manualLevel: null };
+  let history = [];   // newest first, at most 30 readings
+  let socket = null;
+
   function setConnection(ok) {
     const el = $("conn");
     el.textContent = ok ? "Live" : "Offline";
@@ -172,15 +211,21 @@
     $("closedPct").textContent = Math.round((r.curtainPosition / 6) * 100) +
                                  "% closed, target level " + r.targetLevel;
 
-    // Mode badge: same priority as the Arduino code
+    // Mode badge. Priority: fire, then manual command, then rain, then light.
     const badge = $("badge");
     const win = $("window");
-    win.classList.remove("fire", "rain");
+    win.classList.remove("fire", "rain", "manual");
     if (r.fireDetected) {
       badge.textContent = "FIRE OVERRIDE";
       badge.className = "badge danger";
-      $("modeNote").textContent = "Flame and heat detected. The curtain is forced open.";
+      $("modeNote").textContent = "Flame and heat detected. The curtain is forced open, even in manual mode.";
       win.classList.add("fire");
+    } else if (control.mode === "MANUAL") {
+      badge.textContent = "MANUAL CONTROL";
+      badge.className = "badge warn";
+      $("modeNote").textContent = "You are holding the curtain at level " + control.manualLevel +
+                                  ". Fire would still force it open.";
+      win.classList.add("manual");
     } else if (r.rainActive) {
       badge.textContent = "RAIN OVERRIDE";
       badge.className = "badge info";
@@ -213,8 +258,47 @@
     }).join("");
   }
 
-    let history = [];   // newest first, at most 30 readings
-  let socket = null;
+  // ----- Remote control -----
+
+  function showControl() {
+    const label = $("controlMode");
+    if (control.mode === "MANUAL") {
+      label.textContent = "Manual, held at level " + control.manualLevel +
+                          " (" + STATE_NAMES[control.manualLevel].toLowerCase() + ")";
+    } else {
+      label.textContent = "Automatic, following the light level";
+    }
+  }
+
+  async function sendControl(path) {
+    $("controlMsg").textContent = "";
+    try {
+      const res = await fetch(path, { method: "POST" });
+      if (!res.ok) {
+        $("controlMsg").textContent = await res.text();
+        return;
+      }
+      control = await res.json();
+      showControl();
+      if (history.length > 0) render(history[0], history);
+    } catch (e) {
+      $("controlMsg").textContent = "Could not reach the server.";
+    }
+  }
+
+  async function loadControl() {
+    try {
+      const res = await fetch("/api/control");
+      if (res.ok) {
+        control = await res.json();
+        showControl();
+      }
+    } catch (e) {
+      // ignore, the next check will try again
+    }
+  }
+
+  // ----- Readings -----
 
   async function loadHistory() {
     try {
@@ -254,6 +338,12 @@
     socket.onerror = () => socket.close();
   }
 
+  // Fill the level list: 0 - Fully open ... 6 - Fully closed
+  $("levelSelect").innerHTML = STATE_NAMES.map((name, i) =>
+    '<option value="' + i + '">' + i + " - " + name + "</option>").join("");
+
+  loadControl();
+  setInterval(loadControl, 2000);   // control mode changes rarely, so a light check is enough
   connect();
 </script>
 </body>

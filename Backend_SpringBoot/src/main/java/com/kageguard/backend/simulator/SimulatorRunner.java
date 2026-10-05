@@ -13,10 +13,11 @@ public class SimulatorRunner {
 
     private static final Logger log = LoggerFactory.getLogger(SimulatorRunner.class);
 
-    private final CurtainSimulator simulator = new CurtainSimulator();
+    private final CurtainSimulator simulator;
     private final ReadingService service;
 
-    public SimulatorRunner(ReadingService service) {
+    public SimulatorRunner(CurtainSimulator simulator, ReadingService service) {
+        this.simulator = simulator;
         this.service = service;
     }
 
